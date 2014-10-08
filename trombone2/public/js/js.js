@@ -243,10 +243,6 @@ var Message = {
     NOTICE_ITEM_ADDED: {
         text : 'Item was added to the order.',
         type : 'notice'
-    },
-    NOTICE_ITEM_QTY_UPDATED: {
-        text : 'The item quantity was updated.',
-        type : 'notice'
     }
 };
 
@@ -1354,7 +1350,6 @@ var Editor = function(priceCatId, cont, products) {
                     Basket.updateItem(id, quantity);
     
                     refresh(page);
-                    App.notify('NOTICE_ITEM_QTY_UPDATED');
     
                 }.bind(this));
     
