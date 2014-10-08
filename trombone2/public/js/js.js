@@ -1308,7 +1308,7 @@ var Editor = function(priceCatId, cont, products) {
             controls.find('button.order-item-add').click(function() {
     
                 var el = $(this).parent().parent(),
-                    select = el.find('select:visible');
+                    select = el.find('select:visible'),
                     input  = el.find('input[name="quantity"]'),
                     id = select.val(), 
                     quantity = Number(input.val());
