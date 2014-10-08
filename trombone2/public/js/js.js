@@ -1498,7 +1498,11 @@ $(document).ready(function() {
             'order/edit/:id'                            : 'editOrder',
             'queue'                                     : 'offlineQueue',
             'logout'                                    : 'logout',
-            'cache/clear'                               : 'clearCache'
+            'cache/clear'                               : 'clearCache',
+            ''                                          : 'index'
+        },
+        index: function() {
+            $('#main').html('/');
         },
         clearCache: function() {
             store.clear();
@@ -1610,6 +1614,7 @@ $(document).ready(function() {
         logout: function() {
 
             App.logout();
+            App.refresh();
 
         },
         offline: function() {
