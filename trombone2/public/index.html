@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <style type="text/css">
+            table td { border: 1px solid #ccc; }
+        </style>
+    </head>
+    <body data-host="http://localhost:3010" data-key="14ad0ef86bc392b39bad6009113c2a5a8a1d993a">
+
+        <div id="main"></div>
+        <div id="notice"></div>
+        <div id="debug"></div>
+
+        <script type="text/javascript" src="js/jquery.min.js"></script>
+        <script type="text/javascript" src="js/jquery.validate.min.js"></script>
+        <script type="text/javascript" src="js/rollups/aes.js"></script>
+        <script type="text/javascript" src="js/underscore-min.js"></script>
+        <script type="text/javascript" src="js/backbone-min.js"></script>
+        <script type="text/javascript" src="js/handlebars-v1.3.0.js"></script>
+        <script type="text/javascript" src="js/store.min.js"></script>
+        <script type="text/javascript" src="js/hmac-sha1.js"></script>
+        <script type="text/javascript" src="js/sockjs-0.3.min.js"></script>
+        <script type="text/javascript" src="js/stomp.js"></script>
+        <script type="text/javascript" src="js/js.js"></script>
+
+        <script id="queue" type="text/x-handlebars-template">
+            {{#when item}}
+            <ul>
+                {{#each item}}
+                <li><input type="checkbox" name="queue-item" data-id={{index}}>{{description}}<a href="javascript:" class="queue-item-process" data-id="{{index}}">Process</a> | <a href="javascript:" class="queue-item-remove" data-id={{index}}>Delete</a></li>
+                {{/each}}
+            </ul>
+            <button class="queue-process">Process selected</button>
+            {{else}}
+                <p>Queue is empty.</p>
+            {{/when}}        
+        </script>
+
+        <script id="customer-task-index" type="text/x-handlebars-template">
+            {{#when order}}
+            <h3>Delivered orders pending customer confirmation</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Created</th>
+                        <th>Delivery Time</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {{#each order}}
+                    <tr>
+                        <td>{{created}}</td>
+                        <td>{{lastChange}}</td>
+                        <td><a href="#order/{{id}}">View order details</a></td>
+                        <td>Confirm as delivered</td>
+                    </tr>
+                {{/each}}
+                </tbody>
+            </table>
+            {{else}}
+                <p>No tasks.</p>
+            {{/when}}        
+        </script>
+
+        <script id="customer-view" type="text/x-handlebars-template">
+            <h2>{{name}}</h2>
+            <table>
+                <tr>
+                    <td>Area</td>
+                    <td>{{areaName}}</td>
+                </tr>
+                <tr>
+                    <td>Street Address</td>
+                    <td>{{address}}</td>
+                </tr>
+                <tr>
+                    <td>Created</td>
+                    <td>{{created}}</td>
+                </tr>
+                <tr>
+                    <td>Price Class</td>
+                    <td>{{priceCategory}}</td>
+                </tr>
+                <tr>
+                    <td>TIN</td>
+                    <td>{{tin}}</td>
+                </tr>
+            </table>
+            <hr>
+            <div style="border:1px solid #ddd;">
+                Statistics
+            </div>
+            <hr>
+            <div>
+                <ul>
+                    <li><a class="orders-load-inline" href="javascript:">Orders</a>
+                        <hr>
+                        <div id="customer-orders-inline"></div>
+                        <hr>
+                    </li>
+                    <li><a class="complaints-load-inline" href="javascript:">Complaints</a>
+                        <hr>
+                        <div id="customer-complaints-inline"></div>
+                        <hr>
+                    </li>
+                    <li><a class="contacts-load-inline" href="javascript:">Contact Details</a>
+                        <hr>
+                        <div id="customer-contacts-inline"></div>
+                        <hr>
+                    </li>
+                    <li>Call Activity</li>
+                    <li><a class="tasks-load-inline" href="javascript:">Tasks</a>
+                        <hr>
+                        <div id="customer-tasks-inline"></div>
+                        <hr>
+                    </li>
+                </ul>
+            </div>
+            <hr>
+            <div>
+                <ul>
+                    <li>Register <b>Proactive</b> Call Activity
+                        <ul>
+                            <li><a href="#order/new/proactive/customer/{{id}}">Register an order</a></li>
+                        </ul>
+                    </li>
+                    <li>Register <b>Reactive</b> Call Activity (Customer Received)
+                        <ul>
+                            <li><a href="#order/new/reactive/customer/{{id}}">Register an order</a></li>
+                        </ul>
+                    </li>
+                    <li><a href="#price-list/customer/{{id}}">Product Price List</a></li>
+                </ul>
+            </div>
+            <hr>
+         </script>
+
+        <script id="customer-index" type="text/x-handlebars-template">
+            {{#when customer}}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Navigate</th>
+                        <th>Street</th>
+                        <th>TIN</th>
+                        <th>Phone</th>
+                        <th>Price Class</th>
+                        <th>Area</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {{#each customer}}
+                    <tr>
+                        <td><a href="#customer/{{id}}">{{name}}</a></td>
+                        <td><a href="https://maps.google.com/?daddr={{latitude}},{{longitude}}">Navigate</a></td>
+                        <td>{{address}}</td>
+                        <td>{{tin}}</td>
+                        <td>{{phone}}</td>
+                        <td>{{priceCategory}}</td>
+                        <td>{{areaName}}</td>
+                    </tr>
+                {{/each}}
+                </tbody>
+            </table>
+            {{else}}
+            No customers.
+            {{/when}}
+        </script>
+
+        <script id="customer-price-list" type="text/x-handlebars-template">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th>Price</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {{#each product}}
+                    <tr>
+                        <td><a href="#product/{{id}}">{{name}}</a></td>
+                        <td>{{assignedPrice}}</td>
+                    </tr>
+                {{/each}}
+                 </tbody>
+             </table>
+        </script>
+
+        <script id="order-view" type="text/x-handlebars-template">
+            <table>
+                <tr>
+                    <td>Created</td>
+                    <td>{{created}}</td>
+                </tr>
+                <tr>
+                    <td>Status</td>
+                    <td>{{status}}</td>
+                </tr>
+                <tr>
+                    <td>Customer</td>
+                    <td><a href="#customer/{{customerId}}">{{customerName}}</a></td>
+                </tr>
+            </table>
+        </script>
+
+        <script id="order-products" type="text/x-handlebars-template">
+            {{#when product}}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th>Price</th>
+                        <th>Quantity</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {{#each product}}
+                    <tr>
+                        <td><a href="#product/{{id}}">{{name}}</a></td>
+                        <td>{{price}}</td>
+                        <td>{{quantity}}</td>
+                    </tr>
+                {{/each}}
+                 </tbody>
+             </table>
+             {{else}}
+             No products.
+             {{/when}}
+        </script>
+
+        <script id="order-index" type="text/x-handlebars-template">
+            {{#when order}}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Last Change</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Customer</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {{#each order}}
+                    <tr>
+                        <td>{{lastChange}}</td>
+                        <td>{{status}}</td>
+                        <td>{{created}}</td>
+                        <td><a href="#customer/{{customerId}}">{{customerName}}</a></td>
+                        <td><a href="#order/{{id}}">Details</a></td>
+                    </tr>
+                {{/each}}
+                 </tbody>
+             </table>
+             {{else}}
+                No orders.
+             {{/when}}
+        </script>
+
+        <script id="complaint-index" type="text/x-handlebars-template">
+            {{#when complaint}}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Created</th>
+                        <th>Customer</th>
+                        <th>Title</th>
+                        <th>Type</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {{#each complaint}}
+                    <tr>
+                        <td>{{created}}</td>
+                        <td>{{customer}}</td>
+                        <td><a href="complaint/{{id}}">{{title}}</a></td>
+                        <td>{{kind}}</td>
+                    </tr>
+                {{/each}}
+                 </tbody>
+             </table>
+             {{else}}
+                No complaints.
+             {{/when}}
+        </script>
+
+        <script id="contact-index" type="text/x-handlebars-template">
+            {{#when contact}}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Id</th>
+                        <th>Type</th>
+                        <th>Contact</th>
+                        <th>Comment</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {{#each contact}}
+                    <tr>
+                        <td>{{id}}</td>
+                        <td>{{kind}}</td>
+                        <td>{{datum}}</td>
+                        <td>{{meta}}</td>
+                    </tr>
+                {{/each}}
+                 </tbody>
+            </table>
+            {{else}}
+                No additional contact details.
+            {{/when}}
+        </script>
+
+        <script id="stock-index" type="text/x-handlebars-template">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Quantity</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {{#each item}}
+                    <tr>
+                        <td><a href="#product/{{productId}}">{{productName}}</a></td>
+                        <td>{{quantity}}</td>
+                    </tr>
+                {{/each}}
+                 </tbody>
+             </table>
+        </script>
+
+        <script id="product-index" type="text/x-handlebars-template">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {{#each product}}
+                    <tr>
+                        <td><a href="#product/{{id}}">{{name}}</a></td>
+                    </tr>
+                {{/each}}
+                 </tbody>
+             </table>
+        </script>
+
+        <script id="product-view" type="text/x-handlebars-template">
+            <h2>{{name}}</h2>
+            <p>{{description}}</p>
+            <hr>
+        </script>
+
+        <script id="product-prices" type="text/x-handlebars-template">
+            {{#when item}}
+            <h3>Prices</h3>
+            <ul>
+            {{#each item}}
+                <li>{{name}}: {{price}}</li>
+            {{/each}}
+            </ul>
+            {{/when}}
+        </script>
+
+        <script id="product-limits" type="text/x-handlebars-template">
+            {{#when item}}
+            <h3>Vehicle Weight Class Load Limits</h3>
+            <ul>
+            {{#each item}}
+                <li>{{name}}: {{limit}}</li>
+            {{/each}}
+            </ul>
+            {{/when}}
+        </script>
+
+        <script id="order-create-controls" type="text/x-handlebars-template">
+            <label>Quantity</label>
+            <input type="text" name="quantity" value="1">
+            <button class="order-item-add">Add product</button>
+        </script>
+
+        <script id="order-create-item-index" type="text/x-handlebars-template">
+            {{#if item}}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Id</th>
+                        <th>Name</th>
+                        <th>Quantity</th>
+                        <th></th>
+                        <th>Sub Total</th>
+                    </tr>
+                </thead>
+                <tfoot>
+                    <tr>
+                        <td colspan="5">Total: {{total}}</td>
+                    </tr>
+                </tfoot>
+                <tbody>
+                {{#each item}}
+                    <tr>
+                        <td>{{id}}</td>
+                        <td>{{name}}</td>
+                        <td>
+                            <div>
+                                <span>{{quantity}}</span>
+                                <a class="item-edit" href="javascript:">Edit</a>
+                            </div>
+                            <div style="display:none">
+                                <input class="order-item-quantity" type="text" value="{{quantity}}">
+                                <a data-id="{{id}}" class="item-update" href="javascript:">Update</a> |
+                                <a class="item-edit-cancel" href="javascript:">Cancel</a>
+                            </div>
+                        </td>
+                        <td><a data-id="{{id}}" class="item-remove" href="javascript:">Remove</a></td>
+                        <td>{{subTotal}}</td>
+                    </tr>
+                    {{/each}}
+                </tbody>
+             </table>
+             {{/if}}
+        </script>
+
+        <script id="order-create-product-index" type="text/x-handlebars-template">
+            <div>
+                <select size="{{size}}">
+                {{#each product}}
+                    <option {{#if disabled}}disabled {{/if}}value="{{id}}">{{name}} ({{id}})</option>
+                {{/each}}
+                </select>
+            </div>
+        </script>
+
+        <script id="paginator" type="text/x-handlebars-template">
+            <div>
+                {{#each page}}
+                {{#if current}}
+                    {{index}}
+                {{else}}
+                    <a href="#{{../../url}}{{#unless first}}/page/{{index}}{{/unless}}">{{index}}</a>
+                {{/if}}
+                {{#unless last}} | {{/unless}}
+                {{/each}}
+                ({{results}} results)
+            </div>
+        </script>
+
+        <script id="inline-paginator" type="text/x-handlebars-template">
+            <div>
+                {{#each page}}
+                {{#if current}}
+                    {{index}}
+                {{else}}
+                    <a data-id="{{index}}" class="inline-index" href="javascript:">{{index}}</a>
+                {{/if}}
+                {{#unless last}} | {{/unless}}
+                {{/each}}
+                ({{results}} results)
+            </div>
+        </script>
+
+        <script id="auth-login" type="text/x-handlebars-template">
+
+            <div>
+                <input name="user" type="user" value="fstaff">
+            </div>
+            <div>
+                <input name="password" type="password" value="fstaff">
+            </div>
+            <div>
+                <input type="submit">
+            </div>
+
+        </script>
+
+        <script id="error-message" type="text/x-handlebars-template">
+            <h2>Appliction error</h2>
+            <p>{{message}}</p>
+        </script>
+
+        <script id="offline-message" type="text/x-handlebars-template">
+            <h2>Unable to connect</h2>
+            <p>Offline resource unavailable.</p>
+            <a class="offline-refresh" href="javascript:">Connect</a>
+        </script>
+
+        <script id="notification-list" type="text/x-handlebars-template">
+            <table>
+            {{#each notification}}
+                <tr>
+                    <td>{{repeat}}</td>
+                    <td>{{type}}</td>
+                    <td>{{message}}</td>
+                    <td><a data-id="{{index}}" class="notice-dismiss" href="javascript:">Dismiss</a></td>
+                </tr>
+            {{/each}}
+            </table>
+        </script>
+
+    </body>
+</html>
