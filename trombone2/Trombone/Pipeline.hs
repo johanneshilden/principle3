@@ -21,7 +21,7 @@ module Trombone.Pipeline
 import Control.Applicative
 import Data.Aeson                            as Pipe
 import Data.Maybe                                      ( fromMaybe, mapMaybe )
-import Data.Text                             as Pipe   ( Text )
+import Data.Text                             as Pipe   ( Text, cons )
 import Network.HTTP.Types                              
 import Trombone.Db.Template                  as Pipe
 import Trombone.RoutePattern
@@ -131,7 +131,7 @@ runTransformer (Transformer TransCopy (String from:String to:_)) o =
       Nothing -> o
       Just v  -> HMS.insert to v o
 runTransformer (Transformer TransBind (String key:val:_)) o = HMS.insert key val o
-runTransformer (Transformer TransAggregate (String key:_)) o = HMS.fromList [(key, Object o)]
+runTransformer (Transformer TransAggregate (String key:_)) o = HMS.fromList [(cons '*' key, Object o)]
 runTransformer _ o = o
 
 expand :: Maybe Text -> Object -> Value
