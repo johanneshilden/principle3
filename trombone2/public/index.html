@@ -49,6 +49,39 @@
             {{/when}}        
         </script>
 
+        <script id="activity-index" type="text/x-handlebars-template">
+            {{#when activity}}
+            <table>
+                {{#each activity}}
+                <tr>
+                    <td>{{created}}</td>
+                    <td>{{kind}}</td>
+                    <td>{{contactType}}</td>
+                    <td>{{{link}}}</td>
+                    <td>{{user}}</td>
+                </tr>
+                {{/each}}
+            </table>
+            {{else}}
+                No activity.
+            {{/when}}
+        </script>
+
+        <script id="order-activity-index" type="text/x-handlebars-template">
+            {{#when activity}}
+            <table>
+                {{#each activity}}
+                <tr>
+                    <td>{{created}}</td>
+                    <td>{{status}}</td>
+                </tr>
+                {{/each}}
+            </table>
+            {{else}}
+                No activity.
+            {{/when}}
+        </script>
+
         <script id="customer-task-index" type="text/x-handlebars-template">
             {{#when order}}
             <h3>Delivered orders pending customer confirmation</h3>
@@ -121,7 +154,11 @@
                         <div id="customer-contacts-inline"></div>
                         <hr>
                     </li>
-                    <li>Call Activity</li>
+                    <li><a class="activity-load-inline" href="javascript:">Call Activity</a>
+                        <hr>
+                        <div id="customer-activity-inline"></div>
+                        <hr>
+                    </li>
                     <li><a class="tasks-load-inline" href="javascript:">Tasks</a>
                         <hr>
                         <div id="customer-tasks-inline"></div>

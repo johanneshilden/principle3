@@ -2,12 +2,11 @@
 var Queue = (function(){
 
     var key = '__queue';
-    var qid = 0;
 
     function push(request) {
         var queue = get();
-        queue.store[++qid] = request;
-        queue.index.push(qid);
+        queue.store[++queue.count] = request;
+        queue.index.push(queue.count);
         store.set(key, queue);
     }
 
@@ -16,7 +15,8 @@ var Queue = (function(){
         if (!queue) {
             queue = {
                 index: [],
-                store: {}
+                store: {},
+                count: 0
             };
         }
         return queue;
@@ -575,6 +575,53 @@ var Model = {
 
     },
 
+    getOrderActivityCollection: function(orderId, cont, offline) {
+
+        Storage.request({
+            type: 'GET',
+            resource: 'order-activity/' + orderId,
+            error: function(e) {
+                if (e.status) {
+                    App.error(e);
+                } else {
+
+                    var collection = store.get('activity.order.' + orderId);
+
+                    if (collection && collection.store) {
+                        cont(collection.store);
+                    } else {
+                        offline();
+                    }
+
+                }
+            },
+            success: function(resp) {
+
+                var _store = {};
+                var count = 0;
+                var index = [];
+                var res = [];
+
+                _.each(resp, function(item) {
+                    _store[item.id] = item;
+                    count++;
+                    index.push(item.id);
+                    res.push(item);
+                });
+
+                store.set('activity.order.' + orderId, {
+                    index: index,
+                    store: _store,
+                    count: count
+                });
+
+                cont(res);
+
+            }
+        });
+
+    },
+
     getPriceCategories: function(cont, offline) {
 
         Storage.request({
@@ -736,7 +783,6 @@ var Model = {
             }
         });
 
-
     },
 
     getCustomerOrderCollectionByStatus: function(status, customerId, page, pageSize, cont, offline) {
@@ -875,6 +921,74 @@ var Model = {
 
                             store.set('complaints.customer.' + customerId, collection); 
                             store.set('complaints.all', complaintCollection); 
+                            cont(res, collection.count);
+            
+                        },
+                        error: onError
+                    });
+
+                }
+            });
+
+        });
+
+    },
+
+    getCustomerActivityCollection: function(customerId, page, pageSize, cont, offline) {
+
+        var page = page || 1,
+            offset = (page - 1) * pageSize;
+ 
+        Model.getUserDepot(function(depotId) {
+
+            var collection = Model.getFromStore('activity.customer.' + customerId);
+
+            var onError = function(e) {
+
+                if (!e.status) {
+                    var res = Model.getOfflinePage(collection, page, pageSize);
+            
+                    if (null != res) {
+                        cont(res, collection.count);
+                    } else {
+                        var count = collection.count;
+                        if (offline && 'function' === typeof offline) { 
+                            offline(count); 
+                        } else {
+                            App.offline();
+                        }
+                    }
+                } else {
+                    App.error(e);
+                }
+
+            };
+
+            Storage.request({
+                type: 'GET',
+                resource: 'customer-activity/' + customerId + '/count',
+                error: onError,
+                success: function(resp) {
+
+                    collection.count = resp.count;
+
+                    Storage.request({
+                        type: 'GET',
+                        resource: 'customer-activity/' + customerId + '/limit/' + pageSize + '/offset/' + offset,
+                        success: function(complaints) {
+
+                            var _store = collection.store || {},
+                                index = collection.index || [],
+                                i = offset,
+                                res = [];
+        
+                            _.each(complaints, function(item) {
+                                _store[item.id] = item;
+                                index[i++] = item.id;
+                                res.push(item);
+                            });
+
+                            store.set('activity.customer.' + customerId, collection); 
                             cont(res, collection.count);
             
                         },
@@ -1691,9 +1805,7 @@ $(document).ready(function() {
                             $('#main').append('<li><a href="#order/edit/' + id + '">Edit order</a></li>');
                         }
 
-                        // todo VVV order activity log
-
-                        $('#main').append('<li>View order activity log</li>');
+                        $('#main').append('<li><a class="activity-load-inline" href="javascript:">View order activity log</a><div id="order-activity-inline"></div></li>');
                         $('#main').append('</ul>');
 
                         ////////////////////////////////////////////////////////////////
@@ -1718,7 +1830,28 @@ $(document).ready(function() {
                         }));
 
                     }, App.offline);
+
+                    var loadActivity = function() {
+
+                        var div = $('#order-activity-inline');
+
+                        div.html('Loading...');
+
+                        Model.getOrderActivityCollection(id, function(items, count) {
+            
+                            var t = Handlebars.compile($('#order-activity-index').html());
+                            div.html(t({activity: items}));
+                
+                        }, function(count) {
+                            div.html('<p>Please connect to remote service.</p>');
+                        });
+
+                    };
      
+                    $('a.activity-load-inline').click(function() {
+                        loadActivity();
+                    });
+
                 });
  
             });
@@ -2231,6 +2364,61 @@ $(document).ready(function() {
                     // Call Activity
                     ////////////////////////////////////////////////////////////////
 
+                    var loadActivity = function(page) {
+
+                        var pageSize = 4,
+                            div = $('#customer-activity-inline');
+
+                        div.html('Loading...');
+
+                        var buildPaginator = function(count) {
+                
+                            var t = Handlebars.compile($('#inline-paginator').html());
+                            App.paginator(null, page, pageSize, count, t, function(paginator) {
+
+                                div.append(paginator).find('.inline-index').on('click', function() {
+                                    loadActivity($(this).data('id'))
+                                });
+                
+                            });
+            
+                        };
+    
+                        Model.getCustomerActivityCollection(id, page, pageSize, function(items, count) {
+            
+                            _.each(items, function(item) {
+                                item.link = '';
+                                switch (item.kind) {
+                                    case 'order-placed':
+                                        item.link = '<a href="#order/' + item.entityId + '">View order details</a>';
+                                        break;
+                                    default:
+                                        break;
+                                }
+                            });
+
+                            var t = Handlebars.compile($('#activity-index').html());
+                            div.html(t({activity: items}));
+                            buildPaginator(count);
+                
+                        }, function(count) {
+
+                            if (count) {
+                                div.html('<p>The selected page is not available offline.</p>');
+                                buildPaginator(count);
+                            } else {
+                                div.html('<p>Please connect to remote service.</p>');
+                            }
+                
+                        });
+
+                    };
+
+                    $('a.activity-load-inline').click(function() {
+                        loadActivity(1);
+                    });
+
+
                     ////////////////////////////////////////////////////////////////
                     // Tasks
                     ////////////////////////////////////////////////////////////////
@@ -2343,14 +2531,16 @@ $(document).ready(function() {
                             };
             
                             Storage.request({
-                                resource: '!order',
+                                resource: 'order-create',
                                 type: 'POST',
                                 data: data,
                                 success: function(resp) {
 
+                                    var order = JSON.parse(resp);
+
                                     var errors = false;
                                     var productCollection = Model.getFromStore('products.all');
-                                    var products = Array.isArray(resp.products) ? resp.products : [resp.products];
+                                    var products = Array.isArray(order.products) ? resp.products : [order.products];
 
                                     // Check for errors in response
                                     _.each(products, function(item) {
@@ -2367,7 +2557,7 @@ $(document).ready(function() {
                                         App.notify('NOTICE_ORDER_CREATED');
                                     }
 
-                                    window.location.hash = 'order/' + resp.id;
+                                    window.location.hash = 'order/' + order.id;
 
                                 },
                                 error: function(e) {
@@ -2379,7 +2569,7 @@ $(document).ready(function() {
                                     } else if (!e.status) {
         
                                         Queue.push({
-                                            resource: '!order',
+                                            resource: 'order-create',
                                             type: 'POST',
                                             data: data,
                                             description: 'Create new order for customer "' + customer.name + '".'
@@ -2492,14 +2682,16 @@ $(document).ready(function() {
                                 };
 
                                 Storage.request({
-                                    resource: '!order',
-                                    type: 'PUT',
+                                    resource: 'order-update',
+                                    type: 'POST',
                                     data: data,
                                     success: function(resp) {
-    
+
+                                        var order = JSON.parse(resp);
+
                                         var errors = false;
                                         var productCollection = Model.getFromStore('products.all');
-                                        var products = Array.isArray(resp.products) ? resp.products : [resp.products];
+                                        var products = Array.isArray(order.products) ? order.products : [order.products];
     
                                         // Check for errors in response
                                         _.each(products, function(item) {
@@ -2528,8 +2720,8 @@ $(document).ready(function() {
                                         } else if (!e.status) {
             
                                             Queue.push({
-                                                resource: '!order',
-                                                type: 'PUT',
+                                                resource: 'order-update',
+                                                type: 'POST',
                                                 data: data,
                                                 description: 'Update order #' + id + '.'
                                             });
