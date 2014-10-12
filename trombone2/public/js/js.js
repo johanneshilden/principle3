@@ -2800,7 +2800,7 @@ $(document).ready(function() {
                         };
     
                         Model.getCustomerOrderCollectionByStatus('delivered', id, page, pageSize, function(orders, count) {
-            
+
                             var t = Handlebars.compile($('#customer-task-index').html());
                             div.html(t({order: orders}));
                             buildPaginator(count);
