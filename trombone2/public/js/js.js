@@ -98,10 +98,12 @@ var Basket = (function(){
                 product  : product
             };
 
-            return;
+            return true;
         }
 
         App.notify('ERROR_NO_PRICE_DATA');
+
+        return false;
 
     }
 
@@ -242,6 +244,34 @@ var Message = {
     },
     NOTICE_ITEM_ADDED: {
         text : 'Item was added to the order.',
+        type : 'notice'
+    },
+    NOTICE_COMPLAINT_REGISTERED: {
+        text : 'The complete was registered.',
+        type : 'notice'
+    },
+    NOTICE_CONTACT_ADDED: {
+        text : 'The customer contact was added.',
+        type : 'notice'
+    },
+    NOTICE_ACTIVITY_REGISTERED: {
+        text : 'The customer activity was registered.',
+        type : 'notice'
+    },
+    NOTICE_CUSTOMER_REGISTERED: {
+        text : 'Customer registration is complete and awaiting confirmation.',
+        type : 'notice'
+    },
+    NOTICE_COMPLAINT_RESOLVED: {
+        text : 'The complaint has been resolved.',
+        type : 'notice'
+    },
+    NOTICE_ORDER_CONFIRMED: {
+        text : 'The order delivery has been confirmed.',
+        type : 'notice'
+    },
+    NOTICE_CALL_BACK_SCHEDULED: {
+        text : 'The call back for customer "%1" has been scheduled.',
         type : 'notice'
     }
 };
@@ -575,6 +605,30 @@ var Model = {
 
     },
 
+    getUserTasks: function(cont) {
+
+        Storage.request({
+            type: 'POST',
+            data: {
+                depotId: 1,
+                contactTimeInterval: 5,
+                orderTimeInterval: 4
+            },
+            resource: 'tasks',
+            success: function(resp) {
+                cont(JSON.parse(resp));
+            },
+            error: function(e) {
+                if (e.status) {
+                    App.error(e);
+                } else {
+                    App.offline();
+                }
+            }
+        });
+
+    },
+
     getOrderActivityCollection: function(orderId, cont, offline) {
 
         Storage.request({
@@ -862,14 +916,16 @@ var Model = {
 
     },
 
-    getCustomerComplaintCollection: function(customerId, page, pageSize, cont, offline) {
+    getCustomerComplaintCollection: function(customerId, includeResolved, page, pageSize, cont, offline) {
 
         var page = page || 1,
             offset = (page - 1) * pageSize;
  
         Model.getUserDepot(function(depotId) {
 
-            var collection = Model.getFromStore('complaints.customer.' + customerId);
+            var infix = includeResolved ? '' : 'unresolved.';
+
+            var collection = Model.getFromStore('complaints.' + infix + 'customer.' + customerId);
 
             var onError = function(e) {
 
@@ -893,40 +949,40 @@ var Model = {
             };
 
             Storage.request({
-                type: 'GET',
-                resource: 'complaint/customer/' + customerId + '/count',
+                type: 'POST',
+                resource: 'complaint-collection',
+                data: {
+                    pageSize: pageSize,
+                    customerId: customerId,
+                    page: page,
+                    includeResolved: !!includeResolved
+                },
                 error: onError,
                 success: function(resp) {
 
-                    collection.count = resp.count;
+                    var obj = JSON.parse(resp),
+                        complaints = obj.collection;
 
-                    Storage.request({
-                        type: 'GET',
-                        resource: 'complaint/customer/' + customerId + '/limit/' + pageSize + '/offset/' + offset,
-                        success: function(complaints) {
+                    collection.count = obj.count;
 
-                            var complaintCollection = Model.getFromStore('complaints.all');
+                    var complaintCollection = Model.getFromStore('complaints.all');
             
-                            var _store = collection.store || {},
-                                index = collection.index || [],
-                                i = offset,
-                                res = [];
+                    var _store = collection.store || {},
+                        index = collection.index || [],
+                        i = offset,
+                        res = [];
         
-                            _.each(complaints, function(item) {
-                                _store[item.id] = item;
-                                index[i++] = item.id;
-                                res.push(item);
-                                complaintCollection.store[item.id] = item;
-                            });
-
-                            store.set('complaints.customer.' + customerId, collection); 
-                            store.set('complaints.all', complaintCollection); 
-                            cont(res, collection.count);
-            
-                        },
-                        error: onError
+                    _.each(complaints, function(item) {
+                        _store[item.id] = item;
+                        index[i++] = item.id;
+                        res.push(item);
+                        complaintCollection.store[item.id] = item;
                     });
 
+                    store.set('complaints.' + infix + 'customer.' + customerId, collection); 
+                    store.set('complaints.all', complaintCollection); 
+                    cont(res, collection.count);
+ 
                 }
             });
 
@@ -1226,6 +1282,69 @@ var Model = {
 
     },
 
+    getCustomer: function(customerId, cont) {
+
+        Model.getUserDepot(function(depotId) {
+
+            Storage.request({
+                type: 'GET',
+                resource: 'customer/' + customerId,
+                error: function(e) {
+                    if (!e.status) {
+    
+                        Model.getCollectionItem('customers.active.depot.' + depotId, customerId, cont, App.offline);
+    
+                    } else {
+                        App.error(e);
+                    }
+                },
+                success: function(customer) {
+    
+                    var collection = Model.getFromStore('customers.active.depot.' + depotId);
+                    collection.store[customer.id] = customer;
+                    store.set('customers.active.depot.' + depotId, collection);
+    
+                    cont(customer);
+    
+                }
+    
+            });
+
+        });
+
+    },
+
+    getComplaint: function(id, cont) {
+
+        Storage.request({
+            type: 'POST',
+            resource: 'complaint-item',
+            data: {id: id},
+            error: function(e) {
+                if (!e.status) {
+
+                    Model.getCollectionItem('complaints.all', id, cont, App.offline);
+
+                } else {
+                    App.error(e);
+                }
+            },
+            success: function(response) {
+
+                var complaint = JSON.parse(response);
+
+                var collection = Model.getFromStore('complaints.all');
+                collection.store[id] = complaint;
+                store.set('complaints.all', collection);
+
+                cont(complaint);
+
+            }
+
+        });
+
+    },
+
     getProductCollection: function(depotId, page, pageSize, cont, offline) {
 
         var page = page || 1,
@@ -1430,9 +1549,10 @@ var Editor = function(priceCatId, cont, products) {
     
                 confirmStockAvailability(id, quantity, function(product) {
     
-                    Basket.insertItem(product, quantity);
-                    refresh(page);
-                    App.notify('NOTICE_ITEM_ADDED');
+                    if (Basket.insertItem(product, quantity)) {
+                        refresh(page);
+                        App.notify('NOTICE_ITEM_ADDED');
+                    }
     
                 });
     
@@ -1594,17 +1714,40 @@ $(document).ready(function() {
         else return opts.inverse(this);
     });
 
+    $.validator.addMethod("datetime", function (value, element) {
+        return this.optional(element) || /(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2}).(\d)/.test(value);
+    }, "Please enter a date-time in the format YYYY-MM-DD hh:mm:ss.s");
+
+    $.validator.addMethod("time", function (value, element) {
+        return this.optional(element) || /(\d{2}):(\d{2}):(\d{2}).(\d)/.test(value);
+    }, "Please enter a valid time in the format hh:mm:ss.s");
+
+    $.validator.addMethod("moreRecentThan", function (value, element, d) {
+        var date1 = new Date(value),
+            date2 = new Date(d);
+        return this.optional(element) || date1 > date2;
+    }, "Please specify a date and time more recent than {0}");
+
     App.init({
         routes: {
             'orders(/page/:page)'                       : 'showOrders',
+            'tasks(/page/:page)'                        : 'showTasks',
             'order/:id'                                 : 'viewOrder',
             'stock(/page/:page)'                        : 'showStock',
             'price-list/customer/:id(/page/:page)'      : 'showPriceList',
             'product/:id'                               : 'viewProduct',
             'customers(/page/:page)'                    : 'showCustomers',
+            'customers/global'                          : 'showGlobalCustomers',
+            'customer/new'                              : 'registerCustomer',
             'customer/:id'                              : 'viewCustomer',
             'order/new/:type/customer/:id(/page/:page)' : 'createOrder',
             'order/edit/:id'                            : 'editOrder',
+            'complaint/:id'                             : 'viewComplaint',
+            'service-complaint/new/:type/customer/:id'  : 'createServiceComplaint',
+            'quality-complaint/new/:type/customer/:id'  : 'createQualityComplaint',
+            'contact/new/:type/customer/:id'            : 'addContact',
+            'call/log/:type/customer/:id'               : 'logCall',
+            'no-activity/:type/customer/:id'            : 'noActivity',
             'queue'                                     : 'offlineQueue',
             'logout'                                    : 'logout',
             'cache/clear'                               : 'clearCache',
@@ -2190,6 +2333,159 @@ $(document).ready(function() {
             });
 
         },
+        showGlobalCustomers: function() {
+
+            var searchResults = $('<div></div>');
+
+            $('#main').html('<h2>Search for customers</h2><input type="text" class="search">');
+            $('#main').append(searchResults);
+
+            ////////////////////////////////////////////////////////////////
+            // Live search 
+            ////////////////////////////////////////////////////////////////
+    
+            (function(){
+    
+                var refreshSearch = function(text, page) {
+    
+                    var page = page || 1;
+                    var pageSize = 4;
+    
+                    var buildPaginator = function(count) {
+                        var t = Handlebars.compile($('#inline-paginator').html());
+                        App.paginator(null, page, pageSize, count, t, function(paginator) {
+    
+                            searchResults.append(paginator).find('.inline-index').on('click', function() {
+                                refreshSearch(text, $(this).data('id'));
+                            });
+    
+                        });
+                    };
+    
+                    var onError = function(e) {
+                        if (!e.status) {
+                            searchResults.html('No service.');
+                        } else {
+                            App.error(e);
+                        }
+                    };
+    
+                    var offset = (page - 1) * pageSize;
+                    var query = { q: '%' + text + '%' };
+    
+                    Storage.request({
+                        type: 'POST',
+                        resource: 'customer/search/count',
+                        data: query,
+                        error: onError,
+                        success: function(resp) {
+                            
+                            var count = resp.count;
+    
+                            if (!count) {
+                                searchResults.html('No matching customers found.');
+                                return;
+                            }
+    
+                            Storage.request({
+                                type: 'POST',
+                                resource: 'customer/search/limit/' + pageSize + '/offset/' + offset,
+                                data: query,
+                                error: onError,
+                                success: function(customers) {
+    
+                                    var t = Handlebars.compile($('#customer-index-global').html());
+    
+                                    searchResults.html(t({
+                                        customer: customers,
+                                        size: pageSize
+                                    }));
+    
+                                    buildPaginator(count);
+    
+                                }
+                            });
+    
+                        }
+                    });
+    
+                };
+    
+                $('input[type="text"].search').on('input', function() {
+                    var text = $(this).val();
+                    if (text.length >= 2) {
+                        refreshSearch(text, 1);
+                    } else {
+                        searchResults.empty();
+                    }
+                });
+    
+            }());
+
+        },
+        registerCustomer: function() {
+
+            var form = $('<form></form>').append($('#customer-create').html());
+
+            $('#main').html(form);
+
+            form.validate({
+                rules: {
+                    "name"           : "required",
+                    "address"        : "required",
+                    "phone"          : "required"
+                },
+                submitHandler: function(form) {
+
+                    var date = new Date();
+
+                    var data = {
+                        datetime : date.toISOString(),
+                        name     : form['name'].value,
+                        phone    : form['phone'].value,
+                        address  : form['address'].value,
+                        userId   : App.user().id
+                    };
+
+                    Storage.request({
+                        resource: 'customer-pending',
+                        type: 'POST',
+                        data: data,
+                        success: function(resp) {
+
+                            App.notify('NOTICE_CUSTOMER_REGISTERED');
+                            window.location.hash = 'customer/' + resp.id;
+
+                        },
+                        error: function(e) {
+
+                            var obj = e.responseJSON;
+
+                            if (obj && obj.message) {
+                                App.notify('ERROR_GENERIC', obj.message);
+                            } else if (!e.status) {
+
+                                Queue.push({
+                                    resource: 'customer-pending',
+                                    type: 'POST',
+                                    data: data,
+                                    description: 'Register new customer: "' + data.name + '".'
+                                });
+
+                                App.notify('REQUEST_DELAYED');
+                                window.location.hash = 'queue';
+
+                            } else {
+                                App.notify('ERROR_GENERIC', e.responseText);
+                            }
+
+                        }
+                    });
+
+                }
+            });
+
+        },
         viewCustomer: function(id) {
 
             Model.getUserDepot(function(depotId) {
@@ -2202,6 +2498,41 @@ $(document).ready(function() {
                     ////////////////////////////////////////////////////////////////
                     // Stats
                     ////////////////////////////////////////////////////////////////
+
+                    var onError = function(e) {
+
+                        $('#order-stats').html('Statistics not available offline.');
+
+                    };
+
+                    Storage.request({
+                        resource: 'order-average/customer/' + id,
+                        type: 'GET',
+                        success: function(resp) {
+
+                            var average = resp.average;
+
+                            Storage.request({
+                                resource: 'time-average/customer/' + id,
+                                type: 'GET',
+                                success: function(resp) {
+
+                                    var hours = resp.hours;
+
+                                    var t = Handlebars.compile($('#stats').html());
+
+                                    $('#order-stats').html(t({
+                                        average: average,
+                                        hours: hours
+                                    }));
+
+                                },
+                                error: onError,
+                            });
+
+                        },
+                        error: onError
+                    });
 
                     ////////////////////////////////////////////////////////////////
                     // Orders
@@ -2317,7 +2648,7 @@ $(document).ready(function() {
                     // Complaints
                     ////////////////////////////////////////////////////////////////
 
-                    var loadComplaints = function(page) {
+                    var loadComplaints = function(page, includeResolved) {
 
                         var pageSize = 4,
                             div = $('#customer-complaints-inline');
@@ -2330,34 +2661,55 @@ $(document).ready(function() {
                             App.paginator(null, page, pageSize, count, t, function(paginator) {
 
                                 div.append(paginator).find('.inline-index').on('click', function() {
-                                    loadComplaints($(this).data('id'))
+                                    loadComplaints($(this).data('id'), includeResolved)
                                 });
                 
                             });
             
                         };
+
+                        var header = function() {
+
+                            var checkbox = $('<input type="checkbox" id="complaints-include-resolved"' + (includeResolved ? ' checked' : '') + '>');
+
+                            div.html(checkbox);
+                            div.append('<label>Show resolved complaints</label><br><hr>');
+
+                            checkbox.click(function() {
+                                loadComplaints(1 , $(this).is(':checked'));
+                            });
+                         };
     
-                        Model.getCustomerComplaintCollection(id, page, pageSize, function(complaints, count) {
+                        Model.getCustomerComplaintCollection(id, includeResolved, page, pageSize, function(complaints, count) {
             
                             var t = Handlebars.compile($('#complaint-index').html());
-                            div.html(t({complaint: complaints}));
+
+                            header();
+
+                            div.append(t({
+                                complaint: complaints,
+                                showResolved: includeResolved
+                            }));
+
                             buildPaginator(count);
-                
+
                         }, function(count) {
 
+                            header();
+
                             if (count) {
-                                div.html('<p>The selected page is not available offline.</p>');
+                                div.append('<p>The selected page is not available offline.</p>');
                                 buildPaginator(count);
                             } else {
-                                div.html('<p>Please connect to remote service.</p>');
+                                div.append('<p>Please connect to remote service.</p>');
                             }
                 
                         });
- 
+
                     };
 
                     $('a.complaints-load-inline').click(function() {
-                        loadComplaints(1);
+                        loadComplaints(1, false);
                     });
 
                     ////////////////////////////////////////////////////////////////
@@ -2391,6 +2743,10 @@ $(document).ready(function() {
                                 switch (item.kind) {
                                     case 'order-placed':
                                         item.link = '<a href="#order/' + item.entityId + '">View order details</a>';
+                                        break;
+                                    case 'service-complaint':
+                                    case 'quality-complaint':
+                                        item.link = '<a href="#complaint/' + item.entityId + '">View complaint</a>';
                                         break;
                                     default:
                                         break;
@@ -2449,6 +2805,53 @@ $(document).ready(function() {
                             div.html(t({order: orders}));
                             buildPaginator(count);
                 
+                            $('a.task-confirm-delivered').click(function() {
+
+                                var orderId = $(this).data('id'),
+                                    date = new Date();
+
+                                var data = {
+                                    'status'   : 'confirmed', 
+                                    'datetime' : date.toISOString()
+                                };
+
+                                Storage.request({
+                                    resource: '!order/status/' + orderId,
+                                    type: 'PATCH',
+                                    data: data,
+                                    success: function(resp) {
+            
+                                        App.notify('NOTICE_ORDER_CONFIRMED');
+                                        window.location.hash = 'order/' + orderId;
+            
+                                    },
+                                    error: function(e) {
+            
+                                        var obj = e.responseJSON;
+            
+                                        if (obj && obj.message) {
+                                            App.notify('ERROR_GENERIC', obj.message);
+                                        } else if (!e.status) {
+            
+                                            Queue.push({
+                                                resource: '!order/status/' + orderId,
+                                                type: 'PATCH',
+                                                data: data,
+                                                description: 'Confirm order #' + orderId + ' as delivered.'
+                                            });
+            
+                                            App.notify('REQUEST_DELAYED');
+                                            window.location.hash = 'queue';
+            
+                                        } else {
+                                            App.notify('ERROR_GENERIC', e.responseText);
+                                        }
+            
+                                    }
+                                });
+ 
+                            });
+
                         }, function(count) {
 
                             if (count) {
@@ -2757,6 +3160,553 @@ $(document).ready(function() {
 
                     });
                 });
+
+            });
+
+        },
+        viewComplaint: function(id) {
+
+            Model.getComplaint(id, function(complaint) {
+
+                var t = Handlebars.compile($('#complaint-view').html());
+                $('#main').html(t(complaint));
+
+                if ('quality' == complaint.kind) {
+
+                    var t = Handlebars.compile($('#complaint-products').html());
+                    $('#main').append(t({
+                        product: complaint.products
+                    }));
+
+                }
+
+                $('button.complaint-resolve').click(function() {
+
+                    var date = new Date();
+
+                    Storage.request({
+                        resource: 'complaint/resolve/' + id,
+                        type: 'PATCH',
+                        data: { datetime: date.toISOString() },
+                        success: function(resp) {
+
+                            App.notify('NOTICE_COMPLAINT_RESOLVED');
+                            App.refresh();
+
+                        },
+                        error: function(e) {
+
+                            var obj = e.responseJSON;
+
+                            if (obj && obj.message) {
+                                App.notify('ERROR_GENERIC', obj.message);
+                            } else if (!e.status) {
+
+                                Queue.push({
+                                    resource: 'complaint/resolve/' + id,
+                                    type: 'PATCH',
+                                    data: { datetime: date.toISOString() },
+                                    description: 'Resolve complaint "' + complaint.title + '".'
+                                });
+
+                                App.notify('REQUEST_DELAYED');
+                                window.location.hash = 'queue';
+
+                            } else {
+                                App.notify('ERROR_GENERIC', e.responseText);
+                            }
+
+                        }
+                    });
+ 
+                });
+
+            });
+
+        },
+        createServiceComplaint: function(type, customerId) {
+
+            Model.getCustomer(customerId, function(customer) {
+    
+                var t = Handlebars.compile($('#complaint-create').html());
+
+                var form = $('<form></form>').append(t({customer: customer}));
+
+                $('#main').html(form);
+    
+                form.validate({
+                    rules: {
+                        "title"          : "required",
+                        "description"    : "required"
+                    },
+                    submitHandler: function(form) {
+    
+                        var date = new Date();
+    
+                        var data = {
+                            datetime    : date.toISOString(),
+                            title       : form['title'].value,
+                            description : form['description'].value,
+                            userId      : App.user().id,
+                            contactType : type
+                        };
+    
+                        Storage.request({
+                            resource: '!service-complaint/customer/' + customerId,
+                            type: 'POST',
+                            data: data,
+                            success: function(resp) {
+    
+                                App.notify('NOTICE_COMPLAINT_REGISTERED');
+                                window.location.hash = 'customer/' + customerId;
+    
+                            },
+                            error: function(e) {
+    
+                                var obj = e.responseJSON;
+    
+                                if (obj && obj.message) {
+                                    App.notify('ERROR_GENERIC', obj.message);
+                                } else if (!e.status) {
+    
+                                    Queue.push({
+                                        resource: '!service-complaint/customer/' + customerId,
+                                        type: 'POST',
+                                        data: data,
+                                        description: 'Register service complaint for customer "' + customer.name + '".'
+                                    });
+    
+                                    App.notify('REQUEST_DELAYED');
+                                    window.location.hash = 'customer/' + customerId;
+    
+                                } else {
+                                    App.notify('ERROR_GENERIC', e.responseText);
+                                }
+    
+                            }
+                        });
+    
+                    }
+                });
+    
+            });
+ 
+        },
+        createQualityComplaint: function(type, customerId) {
+
+            Model.getUserDepot(function(depotId) {
+    
+                Model.getCustomer(customerId, function(customer) {
+    
+                    var t = Handlebars.compile($('#complaint-create').html());
+                    var form = $('<form></form>').append(t({
+                        customer: customer
+                    }));
+        
+                    $('#main').html(form);
+
+                    var ids = [],
+                        page = 1;
+
+                    form.validate({ 
+                        rules: {
+                            "title"          : "required",
+                            "description"    : "required"
+                        },
+                        submitHandler: function(form) {
+
+                            if (!ids.length) {
+                                message.html('Please add at least one product.');
+                                return;
+                            }
+
+                            var products = [];
+
+                            _.each(ids, function(id) {
+                                var produced = form['prod-' + id + '-production-date'].value + ' ' + form['prod-' + id + '-production-time'].value;
+                                products.push({
+                                    batchNumber : form['prod-' + id + '-batch-number'].value,
+                                    productId   : id,
+                                    quantity    : form['prod-' + id + '-quantity'].value,
+                                    produced    : produced,
+                                    expiryDate  : form['prod-' + id + '-expiry-date'].value,
+                                    description : form['prod-' + id + '-comment'].value
+                                });
+                            });
+
+                            var date = new Date();
+        
+                            var data = {
+                                datetime    : date.toISOString(),
+                                title       : form['title'].value,
+                                description : form['description'].value,
+                                products    : products,
+                                userId      : App.user().id,
+                                contactType : type
+                            };
+        
+                            Storage.request({
+                                resource: '!quality-complaint/customer/' + customerId,
+                                type: 'POST',
+                                data: data,
+                                success: function(resp) {
+        
+                                    App.notify('NOTICE_COMPLAINT_REGISTERED');
+                                    window.location.hash = 'customer/' + customerId;
+        
+                                },
+                                error: function(e) {
+        
+                                    var obj = e.responseJSON;
+        
+                                    if (obj && obj.message) {
+                                        App.notify('ERROR_GENERIC', obj.message);
+                                    } else if (!e.status) {
+        
+                                        Queue.push({
+                                            resource: '!quality-complaint/customer/' + customerId,
+                                            type: 'POST',
+                                            data: data,
+                                            description: 'Register service complaint for customer "' + customer.name + '".'
+                                        });
+        
+                                        App.notify('REQUEST_DELAYED');
+                                        window.location.hash = 'customer/' + customerId;
+        
+                                    } else {
+                                        App.notify('ERROR_GENERIC', e.responseText);
+                                    }
+        
+                                }
+                            });
+ 
+                        }
+                    });
+  
+                    var productList = $('<div></div>');
+                    var message     = $('<div></div>');
+    
+                    $('#complaint-products').html(productList);
+                    $('#complaint-products').append(message);
+    
+                    var refresh = function() {
+
+                        var pageSize = 15;
+            
+                        var buildPaginator = function(count) {
+                
+                            var t = Handlebars.compile($('#inline-paginator').html());
+                            App.paginator(null, page, pageSize, count, t, function(paginator) {
+                
+                                productList.append(paginator).find('.inline-index').on('click', function() {
+                                    page = $(this).data('id');
+                                    refresh();
+                                });
+                
+                            });
+            
+                        };
+            
+                        Model.getProductCollection(depotId, page, pageSize, function(products, count) {
+                
+                            _.each(products, function(product) {
+                                product.disabled = _.contains(ids, product.id); 
+                            });
+                
+                            var t = Handlebars.compile($('#order-create-product-index').html());
+                
+                            productList.html(t({
+                                product: products,
+                                size: pageSize
+                            }));
+                
+                            buildPaginator(count);
+                
+                        }, function(count) {
+                
+                            productList.html('<p>The selected page is not available offline.</p>');
+                            buildPaginator(count);
+                
+                        });
+    
+                    };
+    
+                    refresh();
+       
+                    var button = $('<button>Add product</button>');
+                    $('#complaint-products').append(button);
+    
+                    button.click(function() {
+
+                        var select = productList.find('select:visible'),
+                            id = select.val(); 
+ 
+                        if (!id) {
+                            message.html('No product selected.');
+                            return false;
+                        }
+ 
+                        message.html('');
+
+                        Model.getCollectionItem('products.all', id, function(product) {
+
+                            ids.push(Number(id));
+    
+                            var t = Handlebars.compile($('#complaint-product-item').html());
+                            var item = $(t(product));
+
+                            $('#complaint-products').append(item);
+
+                            $('input[name="prod-' + id + '-title"]').rules('add', 'required');
+                            $('input[name="prod-' + id + '-quantity"]').rules('add', 'required digits');
+                            $('input[name="prod-' + id + '-batch-number"]').rules('add', 'required');
+                            $('input[name="prod-' + id + '-production-date"]').rules('add', 'required date');
+                            $('input[name="prod-' + id + '-production-time"]').rules('add', 'required time');
+                            $('input[name="prod-' + id + '-expiry-date"]').rules('add', 'required date');
+
+                            var removeLink = $('<a href="javascript:">Remove</a>');
+                            item.append(removeLink);
+
+                            removeLink.click(function() {
+                                item.remove();
+                                ids = _.without(ids, Number(id));
+                                refresh(page);
+                            });
+
+                        }, function() {
+
+                            App.notify('NOTICE_PLEASE_CONNECT');
+
+                        });
+
+                        refresh(page);
+
+                        return false;
+
+                    });
+    
+                });
+
+            });
+
+        },
+        addContact: function(type, customerId) {
+
+            Model.getCustomer(customerId, function(customer) {
+
+                var t = Handlebars.compile($('#contact-create').html());
+    
+                var form = $('<form></form>').append(t({
+                    contactType: {
+                        'physical-address' : 'Physical Address',
+                        'po-box-address'   : 'P.O. Box Address',
+                        'landline-phone'   : 'Landline Phone Number',
+                        'mobile-phone'     : 'Mobile Phone Number',
+                        'email-address'    : 'Email Address'
+                    }
+                }));
+    
+                $('#main').html(form);
+    
+                form.validate({
+                    rules: {
+                        "kind"  : "required",
+                        "datum" : "required"
+                    },
+                    submitHandler: function(form) {
+    
+                        var date = new Date();
+    
+                        var data = {
+                            datetime    : date.toISOString(),
+                            kind        : form['kind'].value,
+                            datum       : form['datum'].value, 
+                            meta        : form['meta'].value,
+                            userId      : App.user().id,
+                            contactType : type
+                        };
+    
+                        Storage.request({
+                            resource: '!contact/customer/' + customerId,
+                            type: 'POST',
+                            data: data,
+                            success: function(resp) {
+    
+                                App.notify('NOTICE_CONTACT_ADDED');
+                                window.location.hash = 'customer/' + customerId;
+    
+                            },
+                            error: function(e) {
+    
+                                var obj = e.responseJSON;
+    
+                                if (obj && obj.message) {
+                                    App.notify('ERROR_GENERIC', obj.message);
+                                } else if (!e.status) {
+    
+                                    Queue.push({
+                                        resource: '!contact/customer/' + customerId,
+                                        type: 'POST',
+                                        data: data,
+                                        description: 'Add contact form customer "' + customer.name + '".'
+                                    });
+    
+                                    App.notify('REQUEST_DELAYED');
+                                    window.location.hash = 'customer/' + customerId;
+    
+                                } else {
+                                    App.notify('ERROR_GENERIC', e.responseText);
+                                }
+    
+                            }
+                        });
+     
+                    }
+                });
+
+            });
+
+        },
+        logCall: function(type, customerId) {
+
+            Model.getCustomer(customerId, function(customer) {
+
+                var form = $('<form></form>').append($('#log-call-create').html());
+    
+                $('#main').html(form);
+    
+                form.validate({
+                    rules: {
+                        'description' : 'required',
+                        'date'        : 'required date',
+                        'time'        : 'required time'
+                    },
+                    submitHandler: function(form) {
+
+                        var data = {
+                            customerId  : customerId,
+                            datetime    : form['date'].value + ' ' + form['time'].value,
+                            description : form['description'].value,
+                            kind        : 'scheduled-call-back',
+                            userId      : App.user().id,
+                            contactType : type,
+                            entityId    : customerId
+                        };
+
+                        Storage.request({
+                            resource: 'customer-activity',
+                            type: 'POST',
+                            data: data,
+                            success: function(resp) {
+
+                                App.notify('NOTICE_CALL_BACK_SCHEDULED', customer.name);
+                                window.location.hash = 'customer/' + customerId;
+    
+                            },
+                            error: function(e) {
+    
+                                var obj = e.responseJSON;
+    
+                                if (obj && obj.message) {
+                                    App.notify('ERROR_GENERIC', obj.message);
+                                } else if (!e.status) {
+    
+                                    Queue.push({
+                                        resource: 'customer-activity',
+                                        type: 'POST',
+                                        data: data,
+                                        description: 'Schedule call back form customer "' + customer.name + '".'
+                                    });
+    
+                                    App.notify('REQUEST_DELAYED');
+                                    window.location.hash = 'customer/' + customerId;
+    
+                                } else {
+                                    App.notify('ERROR_GENERIC', e.responseText);
+                                }
+    
+                            }
+                        });
+
+                    }
+                });
+
+            });
+
+        },
+        noActivity: function(type, customerId) {
+
+            Model.getCustomer(customerId, function(customer) {
+
+                var form = $('<form></form>').append('<input type="submit">');
+    
+                $('#main').html(form);
+    
+                form.validate({
+                    submitHandler: function(form) {
+    
+                        var date = new Date();
+
+                        var data = {
+                            customerId  : customerId,
+                            datetime    : date.toISOString(),
+                            description : 'No associated activity.',
+                            kind        : 'no-activity',
+                            userId      : App.user().id,
+                            contactType : type,
+                            entityId    : customerId
+                        };
+
+                        Storage.request({
+                            resource: 'customer-activity',
+                            type: 'POST',
+                            data: data,
+                            success: function(resp) {
+    
+                                App.notify('NOTICE_ACTIVITY_REGISTERED');
+                                window.location.hash = 'customer/' + customerId;
+    
+                            },
+                            error: function(e) {
+    
+                                var obj = e.responseJSON;
+    
+                                if (obj && obj.message) {
+                                    App.notify('ERROR_GENERIC', obj.message);
+                                } else if (!e.status) {
+    
+                                    Queue.push({
+                                        resource: 'customer-activity',
+                                        type: 'POST',
+                                        data: data,
+                                        description: 'Register a customer "no-activity".'
+                                    });
+    
+                                    App.notify('REQUEST_DELAYED');
+                                    window.location.hash = 'customer/' + customerId;
+    
+                                } else {
+                                    App.notify('ERROR_GENERIC', e.responseText);
+                                }
+    
+                            }
+                        });
+
+                    }
+                });
+
+            });
+
+        },
+        showTasks: function(page) {
+
+            Model.getUserTasks(function(tasks) {
+
+                var t = Handlebars.compile($('#task-index').html());
+
+                $('#main').html(t({
+                    task: tasks
+                }));
 
             });
 

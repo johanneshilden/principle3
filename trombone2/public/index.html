@@ -13,7 +13,10 @@
                 <td><a href="#orders">Orders</a></td>
                 <td><a href="#stock">Stock</a></td>
                 <td><a href="#customers">Customers</a></td>
-                <td><a href="#queue">Offl. Queue</a></td>
+                <td><a href="#customers/global">Global customers</a></td>
+                <td><a href="#customer/new">Register a customer</a></td>
+                <td><a href="#tasks">Tasks</a></td>
+                <td><a href="#queue">Offline Activity</a></td>
                 <td><a href="#logout">Logout</a></td>
                 <td><a href="#cache/clear">Clear Cache</a></td>
             </tr>
@@ -49,6 +52,26 @@
             {{/when}}        
         </script>
 
+        <script id="task-index" type="text/x-handlebars-template">
+            <h4>Tasks</h4>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Task Type</th>
+                        <th>Customer</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{#each task}}
+                    <tr>
+                        <td>{{type}}</td>
+                        <td><a href="#customer/{{customerId}}">{{customerName}}</a></td>
+                    </tr>
+                    {{/each}}
+                </tbody>
+            </table>
+        </script>
+            
         <script id="activity-index" type="text/x-handlebars-template">
             {{#when activity}}
             <table>
@@ -82,6 +105,22 @@
             {{/when}}
         </script>
 
+        <script id="customer-create" type="text/x-handlebars-template">
+            <div>
+                <label>Name</label><br>
+                <input type="text" name="name">
+            </div>
+            <div>
+                <label>Address</label><br>
+                <input type="text" name="address">
+            </div>
+            <div>
+                <label>Phone</label><br>
+                <input type="text" name="phone">
+            </div>
+            <input type="submit">
+        </script>
+
         <script id="customer-task-index" type="text/x-handlebars-template">
             {{#when order}}
             <h3>Delivered orders pending customer confirmation</h3>
@@ -98,7 +137,7 @@
                         <td>{{created}}</td>
                         <td>{{lastChange}}</td>
                         <td><a href="#order/{{id}}">View order details</a></td>
-                        <td>Confirm as delivered</td>
+                        <td><a href="javascript:" class="task-confirm-delivered" data-id="{{id}}">Confirm as delivered</a></td>
                     </tr>
                 {{/each}}
                 </tbody>
@@ -106,6 +145,13 @@
             {{else}}
                 <p>No tasks.</p>
             {{/when}}        
+        </script>
+
+        <script id="stats" type="text/x-handlebars-template">
+            <ul>
+                <li>Average order value: {{average}}</li>
+                <li>Average time between orders: {{hours}} hours</li>
+            </ul>
         </script>
 
         <script id="customer-view" type="text/x-handlebars-template">
@@ -133,9 +179,7 @@
                 </tr>
             </table>
             <hr>
-            <div style="border:1px solid #ddd;">
-                Statistics
-            </div>
+            <div id="order-stats" style="border:1px solid #ddd;"></div>
             <hr>
             <div>
                 <ul>
@@ -172,18 +216,62 @@
                     <li>Register <b>Proactive</b> Call Activity
                         <ul>
                             <li><a href="#order/new/proactive/customer/{{id}}">Register an order</a></li>
+                            <li><a href="#service-complaint/new/proactive/customer/{{id}}">Register service complaint</a></li>
+                            <li><a href="#quality-complaint/new/proactive/customer/{{id}}">Register quality complaint</a></li>
+                            <li><a href="#contact/new/proactive/customer/{{id}}">Add contact</a></li>
+                            <li><a href="#call/log/proactive/customer/{{id}}">Log call back</a></li>
+                            <li><a href="#no-activity/proactive/customer/{{id}}">No activity</a></li>
                         </ul>
                     </li>
                     <li>Register <b>Reactive</b> Call Activity (Customer Received)
                         <ul>
                             <li><a href="#order/new/reactive/customer/{{id}}">Register an order</a></li>
+                            <li><a href="#service-complaint/new/reactive/customer/{{id}}">Register service complaint</a></li>
+                            <li><a href="#quality-complaint/new/reactive/customer/{{id}}">Register quality complaint</a></li>
+                            <li><a href="#contact/new/reactive/customer/{{id}}">Add contact</a></li>
+                            <li><a href="#call/log/reactive/customer/{{id}}">Log call back</a></li>
+                            <li><a href="#no-activity/reactive/customer/{{id}}">No activity</a></li>
                         </ul>
                     </li>
                     <li><a href="#price-list/customer/{{id}}">Product Price List</a></li>
                 </ul>
             </div>
             <hr>
-         </script>
+        </script>
+
+        <script id="customer-index-global" type="text/x-handlebars-template">
+            {{#when customer}}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Navigate</th>
+                        <th>Street</th>
+                        <th>TIN</th>
+                        <th>Phone</th>
+                        <th>Price Class</th>
+                        <th>Area</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {{#each customer}}
+                    <tr>
+                        <td>{{name}}</td>
+                        <td><a href="https://maps.google.com/?daddr={{latitude}},{{longitude}}">Navigate</a></td>
+                        <td>{{address}}</td>
+                        <td>{{tin}}</td>
+                        <td>{{phone}}</td>
+                        <td>{{priceCategory}}</td>
+                        <td>{{areaName}}</td>
+                    </tr>
+                {{/each}}
+                </tbody>
+            </table>
+            {{else}}
+            No customers.
+            {{/when}}
+        </script>
+
 
         <script id="customer-index" type="text/x-handlebars-template">
             {{#when customer}}
@@ -307,6 +395,125 @@
              {{/when}}
         </script>
 
+        <script id="contact-create" type="text/x-handlebars-template">
+            <select name="kind">
+                {{#each contactType}}
+                    <option value="{{@key}}">{{.}}</option>
+                {{/each}}
+            </select>
+            <div>
+                <label>Contact</label>
+                <input type="text" name="datum">
+            </div>
+            <div>
+                <label>Comment</label>
+                <input type="text" name="meta">
+            </div>
+            <div>
+                <input type="submit">
+            </div>
+        </script>
+
+        <script id="log-call-create" type="text/x-handlebars-template">
+            <div>
+                <label>Description</label><br>
+                <textarea name="description"></textarea>
+            </div>
+            <div>
+                <label>Date</label><br>
+                <input name="date" type="text">
+            </div>
+            <div>
+                <label>Time</label><br>
+                <input name="time" type="text">
+            </div>
+            <div>
+                <input type="submit">
+            </div>
+        </script>
+
+        <script id="complaint-view" type="text/x-handlebars-template">
+            <h4>{{title}}</h4>
+            <p>{{description}}</p>
+            <p>Customer: <a href="#customer/{{customerId}}">{{customer}}</a></p>
+            {{#if resolved}}
+                This complaint has been resolved.
+            {{else}}
+                <button class="complaint-resolve">Resolve</button>
+            {{/if}}
+        </script>
+
+        <script id="complaint-products" type="text/x-handlebars-template">
+            <h4>Complaint products</h4>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Id</th>
+                        <th>Name</th>
+                        <th>Quantity</th>
+                        <th>Description</th>
+                        <th>Expiry Date</th>
+                        <th>Production Date/Time</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{#each product}}
+                    <tr>
+                        <td>{{id}}</td>
+                        <td><a href="#product/{{id}}">{{name}}</a></td>
+                        <td>{{quantity}}</td>
+                        <td>{{description}}</td>
+                        <td>{{expiryDate}}</td>
+                        <td>{{produced}}</td>
+                    </tr>
+                    {{/each}}
+                 </tbody>
+            </table>
+        </script>
+
+        <script id="complaint-create" type="text/x-handlebars-template">
+            <h2>Register complaint for {{customer.name}}</h2>
+            <div>
+                <label>Title</label><br>
+                <input name="title" type="text">
+            </div>
+            <div>
+                <label>Description</label><br>
+                <textarea name="description"></textarea>
+            </div>
+            <div id="complaint-products"></div>
+            <input type="submit">
+        </script>
+
+        <script id="complaint-product-item" type="text/x-handlebars-template">
+            <div>
+                <hr>
+                <h4>{{name}}</h4>
+                <table>
+                    <tr>
+                        <td>Title</td>
+                        <td><input name="prod-{{id}}-title" type="text"></td>
+                        <td>Quantity</td>
+                        <td><input name="prod-{{id}}-quantity" type="text"></td>
+                        <td>Batch Number</td>
+                        <td><input name="prod-{{id}}-batch-number" type="text"></td>
+                    </tr>
+                    <tr>
+                        <td>Production Date</td>
+                        <td><input name="prod-{{id}}-production-date" type="text"></td>
+                        <td>Production Time</td>
+                        <td><input name="prod-{{id}}-production-time" type="text"></td>
+                        <td>Expiry Date</td>
+                        <td><input name="prod-{{id}}-expiry-date" type="text"></td>
+                    </tr>
+                    <tr>
+                        <td>Comment</td>
+                        <td><textarea name="prod-{{id}}-comment"></textarea></td>
+                    </tr>
+                </table>
+            </div>
+        </script>
+
         <script id="complaint-index" type="text/x-handlebars-template">
             {{#when complaint}}
             <table>
@@ -316,6 +523,8 @@
                         <th>Customer</th>
                         <th>Title</th>
                         <th>Type</th>
+                        <th></th>
+                        {{#if showResolved}}<th>Resolved</th>{{/if}}
                     </tr>
                 </thead>
                 <tbody>
@@ -323,8 +532,10 @@
                     <tr>
                         <td>{{created}}</td>
                         <td>{{customer}}</td>
-                        <td><a href="complaint/{{id}}">{{title}}</a></td>
+                        <td>{{title}}</td>
                         <td>{{kind}}</td>
+                        <td><a href="#complaint/{{id}}">View details</a></td>
+                        {{#if ../showResolved}}<td>{{resolved}}</td>{{/if}}
                     </tr>
                 {{/each}}
                  </tbody>
