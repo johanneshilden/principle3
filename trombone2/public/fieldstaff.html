@@ -15,6 +15,7 @@
                 <td><a href="#customers">Customers</a></td>
                 <td><a href="#customers/global">Global customers</a></td>
                 <td><a href="#customer/new">Register a customer</a></td>
+                <td><a href="#customers/pending">Pending customers</a></td>
                 <td><a href="#tasks">Tasks</a></td>
                 <td><a href="#queue">Offline Activity</a></td>
                 <td><a href="#logout">Logout</a></td>
@@ -37,7 +38,87 @@
         <script type="text/javascript" src="js/hmac-sha1.js"></script>
         <script type="text/javascript" src="js/sockjs-0.3.min.js"></script>
         <script type="text/javascript" src="js/stomp.js"></script>
-        <script type="text/javascript" src="js/js.js"></script>
+        <script type="text/javascript" src="js/fieldstaff.js"></script>
+
+        <script id="customer-create" type="text/x-handlebars-template">
+            <div>
+                <label>Name</label><br>
+                <input type="text" name="name" value="{{name}}">
+            </div>
+            <div>
+                <label>Address</label>
+                <input type="text" name="address" value="{{address}}">
+            </div>
+            <input type="hidden" name="latitude">
+            <input type="hidden" name="longitude">
+            <div>
+                <label>TIN</label>
+                <input type="text" name="tin">
+            </div>
+            <div>
+                <label>Phone</label>
+                <input type="text" name="phone" value="{{phone}}">
+            </div>
+            <div>
+                <label>Active</label>
+                <input type="checkbox" name="is-active" checked>
+            </div>
+            <div>
+                <label>Area</label>
+                <select name="area">
+                    {{#each area}}
+                    <option value="{{id}}">{{name}}</option>
+                    {{/each}}
+                </select>
+            </div>
+            <div>
+                <label>Price category</label>
+                <select name="price-category">
+                    {{#each priceCategory}}
+                    <option value="{{id}}">{{name}}</option>
+                    {{/each}}
+                </select>
+            </div>
+            <input type="submit">
+            <div id="geo-meta"></div>
+        </script>
+
+        <script id="customer-pending-confirm-delete" type="text/x-handlebars-template">
+            Confirm?
+            <button class="delete-confirm">Delete</button>
+            <button class="delete-cancel">Cancel</button>
+        </script>
+
+        <script id="customer-pending-index" type="text/x-handlebars-template">
+            {{#when customer}}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Street</th>
+                        <th>Phone</th>
+                        <th>Created</th>
+                        <th>Registered by</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {{#each customer}}
+                    <tr>
+                        <td>{{name}}</td>
+                        <td>{{address}}</td>
+                        <td>{{phone}}</td>
+                        <td>{{created}}</td>
+                        <td>{{userName}}</td>
+                        <td><a href="javascript:" class="cust-pending-confirm" data-id="{{id}}">Complete registration</a></td>
+                        <td><a href="javascript:" class="cust-pending-delete" data-id="{{id}}">Delete</a></td>
+                    </tr>
+                {{/each}}
+                </tbody>
+            </table>
+            {{else}}
+            No customers.
+            {{/when}}
+        </script>
 
         <script id="queue" type="text/x-handlebars-template">
             {{#when item}}
@@ -174,6 +255,11 @@
                     <td>{{priceCategory}}</td>
                 </tr>
                 <tr>
+                    <td>Map</td>
+                    <td><a href="https://maps.google.com/?daddr={{latitude}},{{longitude}}">Navigate</a></td>
+                    
+                </tr>
+                <tr>
                     <td>TIN</td>
                     <td>{{tin}}</td>
                 </tr>
@@ -203,11 +289,6 @@
                         <div id="customer-activity-inline"></div>
                         <hr>
                     </li>
-                    <li><a class="tasks-load-inline" href="javascript:">Tasks</a>
-                        <hr>
-                        <div id="customer-tasks-inline"></div>
-                        <hr>
-                    </li>
                 </ul>
             </div>
             <hr>
@@ -219,7 +300,7 @@
                             <li><a href="#service-complaint/new/proactive/customer/{{id}}">Register service complaint</a></li>
                             <li><a href="#quality-complaint/new/proactive/customer/{{id}}">Register quality complaint</a></li>
                             <li><a href="#contact/new/proactive/customer/{{id}}">Add contact</a></li>
-                            <li><a href="#call/log/proactive/customer/{{id}}">Log call back</a></li>
+                            <li><a href="#call/log/proactive/customer/{{id}}">Log call back or activity</a></li>
                             <li><a href="#no-activity/proactive/customer/{{id}}">No activity</a></li>
                         </ul>
                     </li>
@@ -229,8 +310,18 @@
                             <li><a href="#service-complaint/new/reactive/customer/{{id}}">Register service complaint</a></li>
                             <li><a href="#quality-complaint/new/reactive/customer/{{id}}">Register quality complaint</a></li>
                             <li><a href="#contact/new/reactive/customer/{{id}}">Add contact</a></li>
-                            <li><a href="#call/log/reactive/customer/{{id}}">Log call back</a></li>
+                            <li><a href="#call/log/reactive/customer/{{id}}">Log call back or activity</a></li>
                             <li><a href="#no-activity/reactive/customer/{{id}}">No activity</a></li>
+                        </ul>
+                    </li>
+                    <li>Register Customer Visit
+                        <ul>
+                            <li><a href="#order/new/visit/customer/{{id}}">Register an order</a></li>
+                            <li><a href="#service-complaint/new/visit/customer/{{id}}">Register service complaint</a></li>
+                            <li><a href="#quality-complaint/new/visit/customer/{{id}}">Register quality complaint</a></li>
+                            <li><a href="#contact/new/visit/customer/{{id}}">Add contact</a></li>
+                            <li><a href="#call/log/visit/customer/{{id}}">Log call back or activity</a></li>
+                            <li><a href="#no-activity/visit/customer/{{id}}">No activity</a></li>
                         </ul>
                     </li>
                     <li><a href="#price-list/customer/{{id}}">Product Price List</a></li>
@@ -425,6 +516,13 @@
             <div>
                 <label>Time</label><br>
                 <input name="time" type="text">
+            </div>
+            <div>
+                <label>Task</label><br>
+                <select name="task-type">
+                    <option value="1">Call back</option>
+                    <option value="2">Scheduled visit</option>
+                </select>
             </div>
             <div>
                 <input type="submit">

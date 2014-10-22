@@ -273,6 +273,14 @@ var Message = {
     NOTICE_CALL_BACK_SCHEDULED: {
         text : 'The call back for customer "%1" has been scheduled.',
         type : 'notice'
+    },
+    NOTICE_CUSTOMER_DELETED: {
+        text : 'The customer was deleted.',
+        type : 'notice'
+    },
+    NOTICE_CUSTOMER_CONFIRMED: {
+        text : 'The customer registration has been confirmed.',
+        type : 'notice'
     }
 };
 
@@ -614,7 +622,7 @@ var Model = {
                 contactTimeInterval: 5,
                 orderTimeInterval: 4
             },
-            resource: 'tasks',
+            resource: 'fieldstaff-tasks',
             success: function(resp) {
                 cont(JSON.parse(resp));
             },
@@ -670,6 +678,101 @@ var Model = {
                 });
 
                 cont(res);
+
+            }
+        });
+
+    },
+
+    getPendingCustomers: function(cont, offline) {
+
+        var collection = Model.getFromStore('customers.pending');
+
+        Storage.request({
+            type: 'GET',
+            resource: 'customer-pending',
+            error: function(e) {
+                if (e.status) {
+                    App.error(e);
+                } else {
+
+                    var collection = store.get('customers.pending');
+
+                    if (collection && collection.store) {
+                        cont(collection.store);
+                    } else {
+                        offline();
+                    }
+
+                }
+            },
+            success: function(resp) {
+
+                var _store = {};
+                var count = 0;
+                var index = [];
+                var res = [];
+
+                _.each(resp, function(item) {
+                    _store[item.id] = item;
+                    count++;
+                    index.push(item.id);
+                    res.push(item);
+                });
+
+                store.set('customers.pending', {
+                    index: index,
+                    store: _store,
+                    count: count
+                });
+
+                cont(res);
+
+            }
+
+        });
+ 
+    },
+
+    getAreas: function(cont, offline) {
+
+        Storage.request({
+            type: 'GET',
+            resource: 'area',
+            error: function(e) {
+                if (e.status) {
+                    App.error(e);
+                } else {
+
+                    var collection = store.get('areas.all');
+
+                    if (collection && collection.store) {
+                        cont(collection.store);
+                    } else {
+                        offline();
+                    }
+
+                }
+            },
+            success: function(resp) {
+
+                var _store = {};
+                var count = 0;
+                var index = [];
+
+                _.each(resp, function(item) {
+                    _store[item.id] = item.name;
+                    count++;
+                    index.push(item.id);
+                });
+
+                store.set('areas.all', {
+                    index: index,
+                    store: _store,
+                    count: count
+                });
+
+                cont(_store);
 
             }
         });
@@ -1511,7 +1614,7 @@ var Editor = function(priceCatId, cont, products) {
     
             }, function(count) {
     
-                productList.html('<p>The selected page is unavailable offline.</p>');
+                productList.html('<p>The selected page is not available offline.</p>');
                 buildPaginator(count);
     
             });
@@ -1738,7 +1841,8 @@ $(document).ready(function() {
             'product/:id'                               : 'viewProduct',
             'customers(/page/:page)'                    : 'showCustomers',
             'customers/global'                          : 'showGlobalCustomers',
-            'customer/new'                              : 'registerCustomer',
+            'customer/new(/:id)'                        : 'registerCustomer',
+            'customers/pending'                         : 'showPendingCustomers',
             'customer/:id'                              : 'viewCustomer',
             'order/new/:type/customer/:id(/page/:page)' : 'createOrder',
             'order/edit/:id'                            : 'editOrder',
@@ -1925,6 +2029,19 @@ $(document).ready(function() {
                 $('#main').html('<p>The selected page is unavailable offline.</p>');
                 buildPaginator(count);
     
+            });
+
+        },
+        showTasks: function(page) {
+
+            Model.getUserTasks(function(tasks) {
+
+                var t = Handlebars.compile($('#task-index').html());
+
+                $('#main').html(t({
+                    task: tasks
+                }));
+
             });
 
         },
@@ -2305,6 +2422,7 @@ $(document).ready(function() {
             });
 
         },
+
         showCustomers: function(page) {
             
             var pageSize = 25;
@@ -2421,69 +2539,6 @@ $(document).ready(function() {
                 });
     
             }());
-
-        },
-        registerCustomer: function() {
-
-            var form = $('<form></form>').append($('#customer-create').html());
-
-            $('#main').html(form);
-
-            form.validate({
-                rules: {
-                    "name"           : "required",
-                    "address"        : "required",
-                    "phone"          : "required"
-                },
-                submitHandler: function(form) {
-
-                    var date = new Date();
-
-                    var data = {
-                        datetime : date.toISOString(),
-                        name     : form['name'].value,
-                        phone    : form['phone'].value,
-                        address  : form['address'].value,
-                        userId   : App.user().id
-                    };
-
-                    Storage.request({
-                        resource: 'customer-pending',
-                        type: 'POST',
-                        data: data,
-                        success: function(resp) {
-
-                            App.notify('NOTICE_CUSTOMER_REGISTERED');
-                            window.location.hash = 'customer/' + resp.id;
-
-                        },
-                        error: function(e) {
-
-                            var obj = e.responseJSON;
-
-                            if (obj && obj.message) {
-                                App.notify('ERROR_GENERIC', obj.message);
-                            } else if (!e.status) {
-
-                                Queue.push({
-                                    resource: 'customer-pending',
-                                    type: 'POST',
-                                    data: data,
-                                    description: 'Register new customer: "' + data.name + '".'
-                                });
-
-                                App.notify('REQUEST_DELAYED');
-                                window.location.hash = 'queue';
-
-                            } else {
-                                App.notify('ERROR_GENERIC', e.responseText);
-                            }
-
-                        }
-                    });
-
-                }
-            });
 
         },
         viewCustomer: function(id) {
@@ -2900,7 +2955,7 @@ $(document).ready(function() {
         },
         createOrder: function(type, customerId, page) {
 
-            if (!_.contains(['proactive', 'reactive'], type)) {
+            if (!_.contains(['proactive', 'reactive', 'visit'], type)) {
                 App.errorMsg('Invalid action: ' + type);
                 return;
             }
@@ -3161,6 +3216,199 @@ $(document).ready(function() {
                     });
                 });
 
+            });
+
+        },
+        showPendingCustomers: function() {
+
+            Model.getPendingCustomers(function(customers) {
+
+                var listView = function() {
+
+                    var t = Handlebars.compile($('#customer-pending-index').html());
+                    $('#main').html(t({customer: customers}));
+
+                    $('a.cust-pending-delete').click(function() {
+
+                        var id = $(this).data('id');
+
+                        Model.getCollectionItem('customers.pending', id, function(customer) {
+
+                            var t = Handlebars.compile($('#customer-pending-confirm-delete').html());
+                            $('#main').html(t());
+    
+                            $('button.delete-cancel').click(function() {
+                                listView();
+                            });
+    
+                            $('button.delete-confirm').click(function() {
+    
+                                Storage.request({
+                                    type: 'DELETE',
+                                    resource: 'customer-pending/' + id,
+                                    error: function(e) {
+        
+                                        var obj = e.responseJSON;
+            
+                                        if (obj && obj.message) {
+                                            App.notify('ERROR_GENERIC', obj.message);
+                                        } else if (!e.status) {
+            
+                                            Queue.push({
+                                                resource: 'customer-pending/' + id,
+                                                type: 'DELETE',
+                                                description: 'Delete registered customer "' + customer.name + '" pending confirmation.'
+                                            });
+            
+                                            App.notify('REQUEST_DELAYED');
+                                            App.refresh();
+            
+                                        } else {
+                                            App.notify('ERROR_GENERIC', e.responseText);
+                                        }
+         
+                                    },
+                                    success: function(resp) {
+        
+                                        App.notify('NOTICE_CUSTOMER_DELETED');
+                                        App.refresh();
+         
+                                    }
+                                });
+     
+                            });
+
+                        }, App.offline);
+                        
+                    });
+
+                    $('a.cust-pending-confirm').click(function() {
+
+                        var id = $(this).data('id');
+                        window.location.hash = 'customer/new/' + id;
+
+                    });
+
+                };
+
+                listView();
+
+            });
+
+        },
+        registerCustomer: function(templateId) {
+
+            Model.getPriceCategories(function(priceCategories) {
+                Model.getAreas(function(areas) {
+
+                    var collect = function(collection) {
+                        var result = [];
+                        for (var key in collection) {
+                            result.push({
+                                id: key,
+                                name: collection[key]
+                            });
+                        }
+                        return result;
+                    };
+
+                    var priceCategories_ = collect(priceCategories);
+                    var areas_ = collect(areas);
+
+                    var t = Handlebars.compile($('#customer-create').html());
+        
+                    var form = $('<form></form>');
+
+                    if (templateId) {
+                        Model.getCollectionItem('customers.pending', templateId, function(customer) {
+                            customer.priceCategory = priceCategories_;
+                            customer.area = areas_;
+                            form.html(t(customer));
+                        });
+                    } else {
+                        form.html(t({
+                            priceCategory: priceCategories_,
+                            area: areas_
+                        }));
+                    }
+
+                    $('#main').html(form);
+
+                    var geoPos = null;
+    
+                    if (navigator.geolocation) {
+                        var updatePosition = function(position) {
+                            geoPos = position.coords;
+                            $('input[name="latitude"]').val(geoPos.latitude);
+                            $('input[name="longitude"]').val(geoPos.longitude);
+                            $('#geo-meta').html('Location accuracy: ' + geoPos.accuracy + ' meters');
+                        };
+                        navigator.geolocation.watchPosition(updatePosition, function() {}, {enableHighAccuracy:true}); 
+                        navigator.geolocation.getCurrentPosition(updatePosition, function() {}, {enableHighAccuracy:true, maximumAge:Infinity, timeout:0});
+                    } 
+
+                    form.validate({
+                        rules: {
+                            "name"           : "required",
+                            "address"        : "required",
+                            "tin"            : "required",
+                            "phone"          : "required"
+                        },
+                        submitHandler: function(form) {
+    
+                            var data = {
+                                name          : form['name'].value,
+                                latitude      : form['latitude'].value,
+                                longitude     : form['longitude'].value,
+                                tin           : form['tin'].value,
+                                phone         : form['phone'].value,
+                                address       : form['address'].value,
+                                isActive      : form['is-active'].checked,
+                                areaId        : form['area'].value,
+                                priceCatId    : form['price-category'].value
+                            };
+    
+                            Storage.request({
+                                type: 'POST',
+                                resource: 'customer',
+                                data: data,
+                                error: function(e) {
+
+                                    alert('a');
+    
+                                    var obj = e.responseJSON;
+        
+                                    if (obj && obj.message) {
+                                        App.notify('ERROR_GENERIC', obj.message);
+                                    } else if (!e.status) {
+        
+                                        Queue.push({
+                                            resource: 'customer',
+                                            type: 'POST',
+                                            data: data,
+                                            description: 'Register new customer: "' + data.name + '".'
+                                        });
+        
+                                        App.notify('REQUEST_DELAYED');
+                                        App.refresh();
+        
+                                    } else {
+                                        App.notify('ERROR_GENERIC', e.responseText);
+                                    }
+     
+                                },
+                                success: function(resp) {
+    
+                                    App.notify('NOTICE_CUSTOMER_CONFIRMED');
+                                    window.location.hash = 'customers';
+     
+                                }
+                            });
+   
+                        }
+                    });
+
+                });
             });
 
         },
@@ -3548,7 +3796,7 @@ $(document).ready(function() {
                                         resource: '!contact/customer/' + customerId,
                                         type: 'POST',
                                         data: data,
-                                        description: 'Add contact for customer "' + customer.name + '".'
+                                        description: 'Add contact form customer "' + customer.name + '".'
                                     });
     
                                     App.notify('REQUEST_DELAYED');
@@ -3583,11 +3831,13 @@ $(document).ready(function() {
                     },
                     submitHandler: function(form) {
 
+                        var taskType = form['task-type'].value;
+
                         var data = {
                             customerId  : customerId,
                             datetime    : form['date'].value + ' ' + form['time'].value,
                             description : form['description'].value,
-                            kind        : 'scheduled-call-back',
+                            kind        : (1 == taskType) ? 'scheduled-call-back' : 'scheduled-visit',
                             userId      : App.user().id,
                             contactType : type,
                             entityId    : customerId
@@ -3615,7 +3865,7 @@ $(document).ready(function() {
                                         resource: 'customer-activity',
                                         type: 'POST',
                                         data: data,
-                                        description: 'Schedule call back form customer "' + customer.name + '".'
+                                        description: 'Schedule call back for customer "' + customer.name + '".'
                                     });
     
                                     App.notify('REQUEST_DELAYED');
@@ -3697,20 +3947,8 @@ $(document).ready(function() {
 
             });
 
-        },
-        showTasks: function(page) {
-
-            Model.getUserTasks(function(tasks) {
-
-                var t = Handlebars.compile($('#task-index').html());
-
-                $('#main').html(t({
-                    task: tasks
-                }));
-
-            });
-
         }
+
     });
     
 });
